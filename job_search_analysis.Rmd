@@ -1,0 +1,767 @@
+---
+title: "EDA of Job Search Data "
+author: "Jessica Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(knitr)
+library(stringr)
+library(ggrepel)
+library(wordcloud)
+library(RColorBrewer)
+library(plotly)
+library(kableExtra)
+
+set.seed(123)
+my_colors <- brewer.pal(10, "Paired") #or dark2
+```
+
+
+```{r include = FALSE, echo = FALSE}
+Sys.setenv("plotly_username"="jsmith0434")
+Sys.setenv("plotly_api_key"="4B9ZcPrnvz92oO9fC0Bs")
+```
+
+## 1. Job Search Activity
+
+```{r read_in_data}
+
+# Load data and ensure columns are correctly formatted
+data <- read.csv("job search history.csv")
+colnames(data) <- str_trim(colnames(data))
+data$applied.date <- as.Date(data$applied.date, format = "%m/%d/%Y")
+data$job.post.date <- as.Date(data$job.post.date, format = "%m/%d/%Y")
+
+head(data)
+```
+
+
+```{r weekly_applications_plot}
+
+# Add a week_number column by extracting the week number from 'applied date'
+data <- data %>%
+  mutate(week.number = lubridate::week(applied.date))
+
+# Calculate the minimum date to set as "week 1"
+min_week <- min(data$week.number)
+
+# Add relative week number
+weekly_applications <- data %>%
+  mutate(relative.week.number = week.number - min_week + 1)
+
+# Count total applications and customized resumes per week
+weekly_summary <- weekly_applications %>%
+  group_by(relative.week.number) %>%
+  summarise(
+    total_applications = n(),
+    customized_resumes = sum(customized.resume. == "Yes", na.rm = TRUE)  # Count customized resumes
+  )
+
+# Plot total applications and customized resumes
+p1 <- ggplot(weekly_summary, aes(x = relative.week.number)) +
+  
+  # Line for total applications
+  geom_line(aes(y = total_applications, color = "Total Applications"), linewidth = 1) +
+  geom_point(aes(y = total_applications, color = "Total Applications",
+                 text = paste("Week:", relative.week.number, "<br>Total Applications:", total_applications))) +
+  
+  # Line for customized resumes
+  geom_line(aes(y = customized_resumes, color = "Customized Resumes"), linetype = "dashed", linewidth = 1) +
+  geom_point(aes(y = customized_resumes, color = "Customized Resumes", 
+                 text = paste("Week:", relative.week.number, "<br>Customized Resumes:", customized_resumes))) +
+  
+  # Customize the plot
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +  # Ensure whole numbers on x-axis
+  labs(title = "Weekly Applications and Customized Resumes", 
+       x = "Week Number", 
+       y = "Applications",  # Rename Y-axis
+       color = "Legend") +  # Legend title
+  theme_minimal() +                         # Remove gray background and grid lines
+  theme(
+    panel.grid.major = element_blank(),     # Remove major grid lines
+    panel.grid.minor = element_blank(),     # Remove minor grid lines
+    axis.line = element_line(color = "black")  # Add axis lines
+  ) +
+  scale_color_manual(values = c("Total Applications" = my_colors[1], "Customized Resumes" = my_colors[2])) 
+
+ggplotly(p1, tooltip = "text")
+
+#api_create(ggplotly(p1, tooltip = "text"), filename = "Weekly Applications")
+```
+
+
+
+```{r total_applications}
+
+# Count total applications per week
+weekly_applications <- data %>%
+  mutate(relative.week.number = week.number - min_week + 1) %>%
+  group_by(relative.week.number) %>%
+  summarise(applications = n())
+
+# Calculate cumulative total number of applications
+weekly_applications <- weekly_applications %>%
+  arrange(relative.week.number) %>%                       # Sort by week number
+  mutate(cumulative_applications = cumsum(applications))  # Calculate cumulative sum
+
+# Define the ratio between the max values of both scales
+max_applications <- max(weekly_applications$applications)
+max_cumulative <- max(weekly_applications$cumulative_applications)
+scale_factor <- max_applications / max_cumulative
+
+# Now plot with two y-axes and labels
+p2 <- ggplot(weekly_applications, aes(x = relative.week.number)) +
+  geom_line(aes(y = applications), color = my_colors[4]) +  # Line for weekly applications
+  geom_point(aes(y = applications), color = my_colors[4]) +  # Points for weekly applications
+  
+  # Add labels for each data point on the primary y-axis
+  geom_text(aes(y = applications, label = applications), vjust = -0.5, color = my_colors[4], size = 3) +
+
+  geom_line(aes(y = cumulative_applications * scale_factor), 
+            color = my_colors[2], linetype = "dashed") +  # Line for cumulative applications, scaled
+  scale_y_continuous(
+    name = "Applications per Week",  # Primary y-axis for weekly applications
+    sec.axis = sec_axis(~ . / scale_factor, 
+                        name = "Total Applications")  # Secondary y-axis
+  ) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +  # Ensure whole numbers on x-axis
+  labs(title = "Weekly and Cumulative Applications", x = "Week Number") +
+  theme_minimal() +  # Remove gray background and grid lines
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_line(color = "black"),  # Add axis lines
+    axis.title.y.left = element_text(color = my_colors[4]),  # Color the primary y-axis label
+    axis.text.y.left = element_text(color = my_colors[4]),    # Color the primary y-axis values
+    axis.title.y.right = element_text(color = my_colors[2]),  # Color the secondary y-axis label
+    axis.text.y.right = element_text(color = my_colors[2])    # Color the secondary y-axis values
+  )
+
+p2
+```
+
+
+```{r summary}
+
+# Calculate key metrics
+average_applications_per_week <- round(mean(weekly_applications$applications))  # Round to whole number
+total_applications <- sum(weekly_applications$applications)
+total_interviews <- sum(data$`selected.for.interview.` == "Yes", na.rm = TRUE)
+total_number_of_weeks <- max(weekly_applications$relative.week.number)
+total_offers = 1
+# Create a table using data.frame()
+summary_table <- data.frame(
+  Metric = c("Weeks Spent Looking for a Job","Total Applications Submitted", "Average Applications per Week", "Applications That Lead to an Interview", "Total Job Offers Recieved"),
+  Value = c(total_number_of_weeks, total_applications, average_applications_per_week, total_interviews, total_offers)
+)
+
+# Display the table with kable for nice formatting
+kable(summary_table, format = "markdown", col.names = c("Metric", "Value"), align = 'l')
+
+
+```
+
+
+```{r funnel}
+
+# Create the summary table
+summary_table <- data.frame(
+  Stage = c("Applications", "Interviews", "Job Offers"),
+  Value = c(total_applications, total_interviews, total_offers)
+)
+
+# Create a  funnel chart
+plot_ly(summary_table, 
+        type = "funnel", 
+        y = ~Stage,  # Stages on the y-axis
+        x = ~Value,  # Values on the x-axis
+        textinfo = "value",  # Show both values and percentages
+        textposition = "outside",
+        marker = list(color = c(my_colors[1], my_colors[2], my_colors[3]))) %>%  # 
+  layout(title = "Job Search Outcomes",
+         xaxis = list(title = "Count"),
+         yaxis = list(title = ""),
+         showlegend = FALSE)
+
+
+```
+
+## 2. Overall Success Rate
+
+```{r overall_response_rate}
+library(scales)  # For formatting numbers as percentages
+
+# Calculate response rate (interview requests)
+response_rate <- data %>%
+  filter(!is.na(`selected.for.interview.`)) %>%
+  summarise(success_rate = mean(`selected.for.interview.` == "Yes"))
+
+# Format the success rate as a percentage
+formatted_response_rate <- percent(response_rate$success_rate)
+
+# Print the formatted response rate
+formatted_response_rate
+
+```
+
+## 3. Customization Performance
+
+### Comparison of response rates
+
+Perform a test to compare the response rates (success rates) for customized resumes versus non-customized resumes. We want to compare whether the response rates (application success) for customized resumes to see if they are significantly different from those for non-customized resumes. 
+
+
+#### Population Size (Sample Size)
+Both groups (customized and non-customized resumes) should have a sufficient number of observations.
+
+```{r population_size}
+
+# Filter out rows where 'customized.resume.' is NA or blank
+customization_data <- data[!is.na(data$customized.resume.) & data$customized.resume. != "", ]
+
+# Now count the number of observations in each group
+table(customization_data$customized.resume., useNA = "ifany")
+
+```
+
+
+#### Test for Binary Data
+A Chi-squared test would compare the proportions of interviews received for customized vs non-customized resumes. Given that you have only 13 interviews (a small sample for the "Yes" category), Fisher's Exact Test is the better option over the Chi-squared test. This test will help you determine if customizing resumes significantly impacts your likelihood of getting an interview.
+
+Fisher's Exact Test is specifically designed for small sample sizes and is more reliable when dealing with low-frequency data (like only 13 interviews). Unlike the Chi-squared test, Fisher's Exact Test provides an exact p-value rather than an approximation, which is why it's preferred in situations with small expected counts.
+
+
+```{r contingency_table}
+
+# Create a contingency table of interview results by resume type
+contingency_table <- table(customization_data$customized.resume., customization_data$`selected.for.interview.` == "Yes")
+
+contingency_table
+```
+
+
+Use Fisher's Exact Test when one or more of the cells in your contingency table have small expected frequencies (usually less than 5). Since there are only 13 successful applications, Fisher’s Exact Test is more reliable than the Chi-squared test for determining whether there's a significant association between customized resumes and interview success.
+
+
+```{r fischers_test}
+# Perform Fisher's Exact Test
+fisher.test(contingency_table)
+```
+
+#### Interpretation of Results:
+P-value = 1:
+
+A p-value of 1 indicates that there is no statistically significant difference between the interview success rates for customized and non-customized resumes.
+In other words, customizing your resume does not significantly increase or decrease the likelihood of getting an interview compared to non-customized resumes, according to this test.
+Odds Ratio = 1.072659:
+
+An odds ratio of 1.072659 suggests that the odds of getting an interview with a customized resume are approximately the same as with a non-customized resume.
+An odds ratio close to 1 means there is no strong association between customizing the resume and the success rate of getting an interview. Specifically, your odds of success are about 1.07 times higher with a customized resume, but this is not statistically significant.
+95% Confidence Interval: [0.1858966, 4.2811602]:
+
+The confidence interval provides a range in which the true odds ratio is likely to fall, with 95% confidence.
+In this case, the confidence interval is quite wide, ranging from 0.1859 to 4.2812. This wide range means there is considerable uncertainty about the true effect of customizing resumes.
+Crucially, since the interval includes 1, it means the test did not find a significant difference between the two groups. This reinforces the conclusion that there is no strong evidence that customizing resumes affects interview success.
+
+The p-value of 1 indicates that there is no statistically significant association between customizing resumes and getting an interview.
+The odds ratio of 1.07 suggests a very small difference in favor of customized resumes, but this is not statistically significant.
+The confidence interval is wide and includes 1, further indicating that the difference between customized and non-customized resumes is not meaningful in this case.
+
+Based on the Fisher's Exact Test results, you can conclude that **customizing resumes does not significantly affect the likelihood of getting an interview** in your dataset. There's no strong evidence to suggest that customizing your resume makes a difference in interview success rates.
+
+```{r table}
+
+# Trim spaces from 'customized.resume.'
+data$customized.resume. <- str_trim(data$customized.resume.)
+
+# Create the contingency table of interview results by resume type
+contingency_table <- table(data$customized.resume., data$`selected.for.interview.` == "Yes")
+
+# Convert contingency table to data frame for easier manipulation
+contingency_df <- as.data.frame.matrix(contingency_table)
+colnames(contingency_df) <- c("Not_Selected", "Selected")
+
+# Calculate total applications and merge it with the contingency data
+contingency_df <- contingency_df %>%
+  mutate(`customized.resume.` = rownames(contingency_df),
+         total_applications = Not_Selected + Selected) %>%
+  select(`customized.resume.`, total_applications, Selected)
+
+# Calculate success rate and merge it with the contingency data
+customized_response <- data %>%
+  filter(`customized.resume.` != "") %>%
+  group_by(`customized.resume.`) %>%
+  summarise(success_rate = mean(`selected.for.interview.` == "Yes", na.rm = TRUE))
+
+# Merge contingency data with success rate
+final_table <- contingency_df %>%
+  left_join(customized_response, by = "customized.resume.") %>%
+  mutate(success_rate = round(success_rate * 100, 2))  # Convert success rate to percentage
+
+# Display table with the additional columns
+final_table %>%
+  kable(col.names = c("Customized?", "Total Applications", "Successful Applications", "Success Rate (%)"),
+        caption = "Success of Applications",
+        format = "html",  # Switch to HTML format to enable styling
+        digits = 2) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width = FALSE)
+```
+
+## 4. Application Responses
+
+```{r no_interview_requests}
+# Count applications with no interview request
+no_interview_count <- sum(data$`selected.for.interview.` == "No", na.rm = TRUE)
+no_interview_count
+```
+
+```{r no_response_companies}
+# Count companies with no response at all
+no_response_count <- sum(data$response.date=="")
+no_response_count
+```
+```{r no_response_companies_percent}
+percent(no_response_count/total_applications)
+```
+
+```{r pie_0}
+
+# Group the data into three categories: Yes, No, and No Response
+response_data <- data %>%
+  mutate(response_status = case_when(
+    `selected.for.interview.` == "Yes" ~ "Interview",
+    `selected.for.interview.` == "Other" ~ "No Interview",
+    `selected.for.interview.` == "No" ~ "No Interview",
+    `selected.for.interview.` == "TBD" ~ "No Interview",
+    `selected.for.interview.` == "N/A" ~ "No Interview",
+    `selected.for.interview.` == "" ~ "No Response"
+  )) %>%
+  group_by(response_status) %>%
+  summarise(count = n())
+
+# Create the pie chart
+p3 <- ggplot(response_data, aes(x = "", y = count, fill = response_status)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +  # Turn the bar chart into a pie chart
+  labs(title = "Application Responses") +
+  theme_void() +  # Remove the background and grid lines for a cleaner look
+  theme(legend.title = element_blank()) +  # Remove legend title
+  scale_fill_manual(values = c("No Response" = my_colors[2], "Interview" = my_colors[4], "No Interview" = my_colors[7])) + 
+  geom_text(aes(label = paste0(round(count / sum(count) * 100), "%")),
+            position = position_stack(vjust = 0.5))  # Add percentage labels to each slice
+
+p3
+
+```
+
+## 5. Average Time to Interview Request
+
+```{r avg_time_to_interview}
+
+# Calculate average time to interview request (for those who received an interview)
+avg_time_to_interview_yes <- data %>%
+  filter(!is.na(time.to.respond), `selected.for.interview.` == "Yes") %>%
+  summarise(avg_time = mean(`time.to.respond`, na.rm = TRUE)) %>%
+  pull(avg_time)  # Extract as a single value
+
+# Calculate average time to response (for those who did not receive an interview)
+avg_time_to_interview_no <- data %>%
+  filter(!is.na(time.to.respond), `selected.for.interview.` == "No") %>%
+  summarise(avg_time = mean(`time.to.respond`, na.rm = TRUE)) %>%
+  pull(avg_time)  # Extract as a single value
+
+# Create a table with the labeled results
+average_times_table <- tibble(
+  Interview_Status = c("Interview", "No Interview"),
+  Avg_Time_To_Respond = c(round(avg_time_to_interview_yes, 1), round(avg_time_to_interview_no, 1))
+)
+
+# Display the table using kable
+average_times_table %>%
+  kable(col.names = c("Interview Status", "Average Time to Respond (Days)"),
+        caption = "Average Time to Respond")
+
+```
+
+## 6. Job Title Analysis
+
+```{r wordcloud}
+
+# Preprocess job titles and create a new cleaned column in the original dataframe
+data <- data %>%
+  mutate(job.titles.cleaned = tolower(job.title),  # Convert to lowercase
+         job.titles.cleaned = str_trim(job.titles.cleaned),  # Remove leading and trailing whitespace
+         
+         # Remove specific words
+         job.titles.cleaned = gsub("\\bsenior\\b", "", job.titles.cleaned),  # Remove 'senior'
+         job.titles.cleaned = gsub("\\bsr.\\b", "", job.titles.cleaned),  # Remove 'sr.'
+         job.titles.cleaned = gsub("\\bintern\\b", "", job.titles.cleaned),  # Remove 'intern'
+         job.titles.cleaned = gsub("\\btechnical\\b", "", job.titles.cleaned),  # Remove 'technical'
+         job.titles.cleaned = gsub("\\bfinancial\\b", "", job.titles.cleaned),  # Remove 'financial'
+         job.titles.cleaned = gsub("\\bprinciple\\b", "", job.titles.cleaned),  # Remove 'principle'
+         job.titles.cleaned = gsub("\\blead\\b", "", job.titles.cleaned),  # Remove 'lead'
+         job.titles.cleaned = gsub("\\bjunior\\b", "", job.titles.cleaned),  # Remove 'junior'
+         job.titles.cleaned = gsub("\\bassociate\\b", "", job.titles.cleaned),  # Remove 'associate'
+         job.titles.cleaned = gsub("\\bcontract\\b", "", job.titles.cleaned),  # Remove 'contract'
+         job.titles.cleaned = gsub("\\bentry level\\b", "", job.titles.cleaned),  # Remove 'entry level'
+
+         # Remove punctuation
+         job.titles.cleaned = gsub("[[:punct:]]+", " ", job.titles.cleaned),  # Remove punctuation
+        
+         # Remove extra spaces created after word removal
+         job.titles.cleaned = str_squish(job.titles.cleaned))
+
+# Create a frequency table and filter out the specific job title "General Interest Application"
+title_freq <- table(data$job.titles.cleaned[!grepl("general interest application", data$job.titles.cleaned, ignore.case = TRUE)])
+
+# Convert the table to a data frame for sorting
+title_freq_df <- as.data.frame(title_freq)
+
+# Rename the columns for clarity
+colnames(title_freq_df) <- c("Job_Title", "Frequency")
+
+# Order the table by frequency in descending order
+title_freq_df <- title_freq_df %>%
+  arrange(desc(Frequency))
+
+# View the top 10 most frequent job titles
+top_title_freq <- head(title_freq_df, 10)
+
+# Create the word cloud from the dataframe
+wordcloud(words = top_title_freq$Job_Title,    # Words from the 'Job_Title' column
+          freq = top_title_freq$Frequency,     # Frequencies from the 'Frequency' column
+          min.freq = 3, random.order = TRUE, random.color = TRUE ,
+          colors = my_colors, 
+          scale = c(3.25, 1))
+
+#top_title_freq
+```
+
+
+```{r job_title_distribution}
+# Group job titles into broader categories
+data <- data %>%
+  mutate(job_category = case_when(
+    grepl("data.*analyst|data analytics|data analysis", job.titles.cleaned, ignore.case = TRUE) ~ "Data Analyst",  # Matches "data" followed by any words and then "analyst"
+    
+    grepl("data.*engineer", job.titles.cleaned, ignore.case = TRUE) ~ "Data Engineer",  # Matches "data" followed by any words and then "engineer"
+    
+    grepl("data.*scientist|data science", 
+          job.titles.cleaned, ignore.case = TRUE) ~ "Data Scientist",  # Flexible match for "data scientist"
+    
+    grepl("analytics.*engineer|business intelligence engineer|bi engineer|.*developer", 
+          job.titles.cleaned, ignore.case = TRUE) ~ "Analytics Engineer",  # Flexible match for Analytics or BI roles
+    
+    grepl("business.*analyst|bi.*analyst|BI Consultant", 
+          job.titles.cleaned, ignore.case = TRUE) ~ "Business Analyst",  # Flexible match for Business and Systems Analyst
+    
+    TRUE ~ "Other"
+  ))
+
+
+# Group by job category and summarize the count
+job_distribution <- data %>%
+  group_by(job_category) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))  # Order the categories by count, descending
+
+
+# Plot with totals above the bars, descending order, and more interesting colors
+p4 <- ggplot(job_distribution, aes(x = reorder(job_category, -count), y = count, fill = job_category)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +  # Remove the legend
+  geom_text(aes(label = count), vjust = -0.5, size = 4) +  # Add totals above the bars
+  scale_fill_manual(values = my_colors) +  # Apply the chosen color palette
+  labs(title = "Distribution of Applications by Job Title", x = "Job Category", y = "Number of Applications") +
+  theme_minimal() +  # Remove grey background
+  theme(legend.title= element_blank()) +
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_line(color = "black"),  # Add axis lines
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14)  # Center the title
+  ) +
+  guides(fill = "none")
+
+ggplotly(p4)
+#api_create(p4, filename = "Applications by Job Title")
+```
+
+
+
+```{r check}
+
+# Select specific columns and filter for rows where job.category is 'other'
+filtered_data <- data %>%
+  select(job.title, job.titles.cleaned, job_category) %>%
+  filter(job_category == 'Other')
+
+# Sort the filtered data by job.titles.cleaned
+filtered_data <- filtered_data %>%
+  arrange(job.titles.cleaned)
+
+# View the filtered data
+#head(filtered_data)
+```
+
+```{r pie}
+
+# Filter for applications that resulted in an interview and calculate proportions
+interview_data <- data %>%
+  filter(`selected.for.interview.` == "Yes") %>%
+  group_by(job_category) %>%
+  summarise(count = n()) %>%
+  mutate(fraction = count / sum(count),
+         csum = rev(cumsum(rev(fraction))),  # Cumulative sum for positioning
+         pos = fraction / 2 + lead(csum, 1),  # Position labels at the middle of the segment
+         pos = if_else(is.na(pos), fraction / 2, pos),  # Handle NA for the last position
+          label = paste0(round(fraction * 100), "% ", job_category))  # Create percentage labels
+
+# Create the pie chart with lines pointing to the segments
+ggplot(interview_data, aes(x = "", y = fraction, fill = job_category)) +
+  geom_col(width = 1, color = "white") +  # Create the pie chart with segments
+  coord_polar(theta = "y") +  # Convert to a pie chart
+  theme_void() +  # Remove background and axes
+  labs(title = "Interviews by Job Category") +
+  
+  # Add percentage labels outside the pie chart with lines pointing to the segments
+  geom_label_repel(aes(y = pos, label = label),
+                   size = 4.5, nudge_x = 1, show.legend = FALSE, box.padding = 0.5) +
+
+  scale_fill_manual(values = my_colors) +
+  
+  # Remove the legend for job categories
+  guides(fill = "none")
+
+
+  
+```
+
+normalized data
+```{r normal_data}
+# Calculate total applications and total interviews by job category
+normalized_interview_data <- data %>%
+  group_by(job_category) %>%
+  summarise(
+    total_applications = n(),  # Count total applications in each category
+    total_interviews = sum(`selected.for.interview.` == "Yes", na.rm = TRUE)  # Count total interviews in each category
+  ) %>%
+  mutate(
+    success_rate = total_interviews / total_applications  # Calculate success rate
+  ) %>%
+  filter(total_interviews > 0)  # Keep only categories with interviews
+
+# Calculate fractions for labeling and positioning
+normalized_interview_data <- normalized_interview_data %>%
+  mutate(fraction = success_rate / sum(success_rate),  # Normalize success rates
+         csum = rev(cumsum(rev(fraction))),  # Cumulative sum for positioning
+         pos = fraction / 2 + lead(csum, 1),  # Position labels at the middle of the segment
+         pos = if_else(is.na(pos), fraction / 2, pos),  # Handle NA for the last position
+         label = paste0(round(success_rate * 100, 1), "% ", job_category))  # Create percentage labels
+
+# Bar chart of success rates by job category
+p5 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_rate), y = success_rate, fill = job_category)) +
+  geom_bar(stat = "identity", color = "white", show.legend = FALSE) +  # Bars with success rate
+  geom_text(aes(label = paste0(round(success_rate * 100, 1), "%")), vjust = 1, size = 4) +  # Add percentage labels above the bars
+  labs(title = "Success Rate of Applications by Job Title",
+       x = "Job Category",
+       y = "Success Rate (Interviews / Applications)") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as percentages
+  scale_fill_manual(values = my_colors) +  # Use custom color palette
+  theme_minimal() +
+  theme(legend.title= element_blank()) +
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_line(color = "black")  # Add axis lines
+  )+
+  guides(fill = "none")
+
+ggplotly(p5)
+#api_create(p5, filename = "Success rate by Job Title")
+
+```
+
+
+```{r bubble}
+# Create a vector that maps job titles to self-assessment scores
+self_assessment_values <- c("Data Scientist" = 5, 
+                            "Data Analyst" = 8, 
+                            "Analytics Engineer" = 8, 
+                            "Data Engineer" = 6, 
+                            "Business Analyst" = 8)
+
+# Add self-assessment ratings to the normalized_interview_data dataframe
+normalized_interview_data <- normalized_interview_data %>%
+  mutate(self_assessment = self_assessment_values[job_category])
+
+
+# Bubble plot with custom colors and no gray background
+p6 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_rate), y = success_rate, size = self_assessment, color = job_category)) +
+    geom_point(alpha=1) +
+   # scale_size(range = c(5, 18), name="Self-Assessment Rating") + # Show size legend for Self-Assessment
+    scale_color_manual(values = my_colors, guide = "none") + # Apply custom colors but hide the color legend
+    scale_y_continuous(labels = scales::percent_format(scale = 100), limits = c(0, .10)) + # Set y-axis to percent with limits from 0 to 10%
+    theme_minimal() + # Change background to minimal (white)
+    labs(title = "Success Rate of Applications by Job Category and Self Assessment",
+         x = "Job Category",
+         y = "Success Rate (Interviews / Applications)",
+         caption = "*Bubble size corresponds to self-assessment of skills.")  +
+    theme(legend.position = "none",
+          plot.caption = element_text(hjust = 0.1), # Center the caption
+          plot.caption.position = "plot") +  # Remove legend 
+    scale_size_continuous(range=c(5,15))
+
+ggplotly(p6)
+#api_create(p6, filename = "Success rate by Job Title and Self Assessment")
+```
+
+## 7. Job Post Age
+
+
+average age of posts when I applied
+```{r age}
+  # Calculate job.post.age
+data <- data %>%
+  mutate(job.post.age = as.numeric(difftime(`applied.date`, `job.post.date`, units = "days")))
+
+# Function to remove outliers based on IQR
+remove_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)  # First quartile (25th percentile)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)  # Third quartile (75th percentile)
+  IQR <- Q3 - Q1  # Interquartile range
+  
+  # Define outlier boundaries
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  
+  # Filter values that are within the lower and upper bound
+  x[x >= lower_bound & x <= upper_bound]
+}
+
+# Apply the function to remove outliers and calculate the mean
+cleaned_data <- remove_outliers(data2$job.post.age)
+
+# Calculate mean without outliers
+mean_without_outliers <- mean(cleaned_data, na.rm = TRUE)
+
+# Print the average age
+mean_without_outliers
+
+```
+
+
+Job post age and interview success
+```{r}
+# Compare average job post age for successful vs. unsuccessful applications
+# Filter the data to include only "Yes" or "No" for selected.for.interview., ignoring everything else and NA
+age_success_data <- data %>%
+ # filter(`selected.for.interview.` %in% c("Yes", "No")) %>%  # Include only "Yes" or "No" responses
+  group_by(`selected.for.interview.`) %>%
+  summarise(average_job_post_age = mean(job.post.age, na.rm = TRUE))
+
+# Create a bar plot to visualize the connection between interview success and job post age
+ggplot(age_success_data, aes(x = `selected.for.interview.`, y = average_job_post_age, fill = `selected.for.interview.`)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  geom_text(aes(label = round(average_job_post_age, 2)), vjust = -0.5, size = 3.5) +
+  labs(title = "Average Age of Job Posts by Interview Success", x = "Interview Success (Yes/No)", y = "Average Job Post Age (Days)") +
+  theme_minimal() +
+scale_fill_manual(values = my_colors)
+
+```
+
+## 8. Job Source Evaluation
+
+Job source effectiveness
+
+```{r job_source}
+# Group job sources where applications resulted in an interview, group the rest as 'Other', and exclude 'Recruiter Outreach'
+source_data <- data %>%
+  # Exclude "Recruiter Outreach"
+  filter(Job.Source != "Recruiter Outreach") %>%
+  
+  group_by(Job.Source) %>%
+  summarise(total_applications = n(),
+            total_interviews = sum(`selected.for.interview.` == "Yes", na.rm = TRUE)) %>%
+  
+  # Only keep job sources that resulted in at least one interview, group others as 'Other'
+  mutate(Job.Source = if_else(total_interviews > 0, Job.Source, "Other")) %>%
+  
+  # Group by the updated Job.Source and calculate totals
+  group_by(Job.Source) %>%
+  summarise(total_applications = sum(total_applications),
+            total_interviews = sum(total_interviews)) %>%
+  
+  # Order by the total number of applications (descending)
+  arrange(desc(total_applications))
+
+# Customize the tooltip using `aes(text)` in `geom_bar`
+p7 <- ggplot(source_data, aes(x = reorder(Job.Source, -total_applications), 
+                              y = total_applications, 
+                              fill = Job.Source, 
+                              text = paste("Job Source: ", Job.Source, 
+                                           "<br>Total Applications: ", total_applications))) +
+  
+  # Bar plot
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  
+  # Add total number of applications as labels
+  geom_text(aes(label = total_applications), 
+            vjust = 1, size = 3.5) +
+  
+  # Customize the labels and theme
+  labs(title = "Applications by Job Source", 
+       x = "Job Source", 
+       y = "Total Applications") +
+  theme_minimal() +
+  theme(legend.title = element_blank()) +
+  scale_fill_manual(values = my_colors) +
+  guides(fill = "none")
+
+# Convert to plotly and customize the tooltip display to use `text`
+ggplotly(p7, tooltip = "text")
+
+#api_create(ggplotly(p7, tooltip = "text"), filename = "Applications by Job Source")
+```
+
+```{r stacked_source_outcomes}
+# Calculate success rate for each job source
+source_data <- source_data %>%
+  mutate(success_rate = (total_interviews / total_applications) * 100)
+
+# Customize the tooltip using `aes(text)` in `geom_bar`
+p8 <- ggplot(source_data, aes(x = reorder(Job.Source, -success_rate), 
+                              y = success_rate, 
+                              fill = Job.Source, 
+                              text = paste("Job Source: ", Job.Source, 
+                                           "<br>Success Rate: ", round(success_rate, 1), "%"))) +
+  
+  # Bar plot with white borders around bars
+  geom_bar(stat = "identity", color = "white") +
+  
+  # Add percentage success rate as labels
+  geom_text(aes(label = paste0(round(success_rate, 1), "%")),
+            vjust = 1, size = 3.5) +
+
+  # Customize labels and theme
+  labs(title = "Success Rate by Job Source", 
+       x = "Job Source", 
+       y = "Success Rate (%)") +
+  theme_minimal() +
+  theme(legend.title= element_blank()) +
+  scale_fill_manual(values = my_colors) +
+  guides(fill = "none")
+
+# Convert to plotly and customize the tooltip display to use `text`
+ggplotly(p8, tooltip = "text")
+
+#api_create(ggplotly(p8, tooltip = "text"), filename = "Success Rate by Job Source")
+
+```
+
