@@ -3,9 +3,11 @@
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
-TBD
+
+This project is an analysis of job search data I collected between June and September 2024.  
 
 * Project Link: [https://github.com/jsmith0434/JobSearchAnalysis](https://github.com/jsmith0434/JobSearchAnalysis)
+
 * _For more info, please refer to the [Medium Article](https://medium.com/@jsmith0434/cruel-summer-lessons-learned-from-the-worst-tech-job-market-in-20-years-75f8abd5f6ae)_
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
