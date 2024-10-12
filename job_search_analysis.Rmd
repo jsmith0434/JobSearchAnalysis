@@ -24,8 +24,8 @@ my_colors <- brewer.pal(10, "Paired") #or dark2
 
 
 ```{r include = FALSE, echo = FALSE}
-Sys.setenv("plotly_username"="jsmith0434")
-Sys.setenv("plotly_api_key"="4B9ZcPrnvz92oO9fC0Bs")
+Sys.setenv("plotly_username"="")
+Sys.setenv("plotly_api_key"="")
 ```
 
 ## 1. Job Search Activity
@@ -37,6 +37,7 @@ data <- read.csv("job search history.csv")
 colnames(data) <- str_trim(colnames(data))
 data$applied.date <- as.Date(data$applied.date, format = "%m/%d/%Y")
 data$job.post.date <- as.Date(data$job.post.date, format = "%m/%d/%Y")
+data$response.date <- as.Date(data$response.date, format = "%m/%d/%Y")
 
 head(data)
 ```
@@ -145,7 +146,6 @@ p2 <- ggplot(weekly_applications, aes(x = relative.week.number)) +
 
 p2
 ```
-
 
 ```{r summary}
 
@@ -302,14 +302,14 @@ customized_response <- data %>%
 # Merge contingency data with success rate
 final_table <- contingency_df %>%
   left_join(customized_response, by = "customized.resume.") %>%
-  mutate(success_rate = round(success_rate * 100, 2))  # Convert success rate to percentage
+  mutate(success_rate = round(success_rate * 100, 3))  # Convert success rate to percentage
 
 # Display table with the additional columns
 final_table %>%
   kable(col.names = c("Customized?", "Total Applications", "Successful Applications", "Success Rate (%)"),
         caption = "Success of Applications",
         format = "html",  # Switch to HTML format to enable styling
-        digits = 2) %>%
+        digits = 4) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
                 full_width = FALSE)
 ```
@@ -324,7 +324,7 @@ no_interview_count
 
 ```{r no_response_companies}
 # Count companies with no response at all
-no_response_count <- sum(data$response.date=="")
+no_response_count <- sum(is.na(data$response.date)) + sum(data$response.date == "", na.rm = TRUE)
 no_response_count
 ```
 ```{r no_response_companies_percent}
@@ -364,6 +364,9 @@ p3
 ## 5. Average Time to Interview Request
 
 ```{r avg_time_to_interview}
+# Calculate the time to respond, handling NA values in response.date
+data <- data %>%
+  mutate(time.to.respond = as.numeric(difftime(response.date, applied.date, units = "days")))
 
 # Calculate average time to interview request (for those who received an interview)
 avg_time_to_interview_yes <- data %>%
@@ -466,6 +469,7 @@ data <- data %>%
   ))
 
 
+
 # Group by job category and summarize the count
 job_distribution <- data %>%
   group_by(job_category) %>%
@@ -473,15 +477,33 @@ job_distribution <- data %>%
   arrange(desc(count))  # Order the categories by count, descending
 
 
-# Plot with totals above the bars, descending order, and more interesting colors
-p4 <- ggplot(job_distribution, aes(x = reorder(job_category, -count), y = count, fill = job_category)) +
+
+
+# Customize the tooltip using `aes(text)` in the plot
+p4 <- ggplot(job_distribution, aes(x = reorder(job_category, -count), 
+                                   y = count, 
+                                   fill = job_category, 
+                                   text = paste("Job Category: ", job_category, 
+                                                "<br>Number of Applications: ", count))) +
+  
+  # Create the bar plot
   geom_bar(stat = "identity", show.legend = FALSE) +  # Remove the legend
-  geom_text(aes(label = count), vjust = -0.5, size = 4) +  # Add totals above the bars
-  scale_fill_manual(values = my_colors) +  # Apply the chosen color palette
-  labs(title = "Distribution of Applications by Job Title", x = "Job Category", y = "Number of Applications") +
-  theme_minimal() +  # Remove grey background
-  theme(legend.title= element_blank()) +
+  
+  # Add totals above the bars
+  geom_text(aes(label = count), vjust = -0.5, size = 4) +  
+  
+  # Apply the chosen color palette
+  scale_fill_manual(values = my_colors) +  
+  
+  # Customize the labels and theme
+  labs(title = "Distribution of Applications by Job Title", 
+       x = "Job Category", 
+       y = "Number of Applications") +
+  
+  # Remove grey background and customize theme
+  theme_minimal() +
   theme(
+    legend.title= element_blank(),
     panel.grid.major = element_blank(),  # Remove major grid lines
     panel.grid.minor = element_blank(),  # Remove minor grid lines
     axis.line = element_line(color = "black"),  # Add axis lines
@@ -489,8 +511,10 @@ p4 <- ggplot(job_distribution, aes(x = reorder(job_category, -count), y = count,
   ) +
   guides(fill = "none")
 
-ggplotly(p4)
-#api_create(p4, filename = "Applications by Job Title")
+# Convert to plotly and use the custom `text` for the tooltip
+ggplotly(p4, tooltip = "text")
+
+#api_create(ggplotly(p4, tooltip = "text"), filename = "Applications by Job Title")
 ```
 
 
@@ -565,26 +589,44 @@ normalized_interview_data <- normalized_interview_data %>%
          pos = if_else(is.na(pos), fraction / 2, pos),  # Handle NA for the last position
          label = paste0(round(success_rate * 100, 1), "% ", job_category))  # Create percentage labels
 
-# Bar chart of success rates by job category
-p5 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_rate), y = success_rate, fill = job_category)) +
+# Customize the tooltip using `aes(text)` in the plot
+p5 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_rate), 
+                                            y = success_rate, 
+                                            fill = job_category, 
+                                            text = paste("Job Category: ", job_category, 
+                                                         "<br>Success Rate: ", round(success_rate * 100, 1), "%"))) +
+  
+  # Create the bar plot with success rate
   geom_bar(stat = "identity", color = "white", show.legend = FALSE) +  # Bars with success rate
-  geom_text(aes(label = paste0(round(success_rate * 100, 1), "%")), vjust = 1, size = 4) +  # Add percentage labels above the bars
+  
+  # Add percentage labels above the bars
+  geom_text(aes(label = paste0(round(success_rate * 100, 1), "%")), vjust = 1, size = 4) +  
+  
+  # Customize the labels and theme
   labs(title = "Success Rate of Applications by Job Title",
        x = "Job Category",
        y = "Success Rate (Interviews / Applications)") +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as percentages
-  scale_fill_manual(values = my_colors) +  # Use custom color palette
+  
+  # Format y-axis as percentages
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  
+  
+  # Use custom color palette
+  scale_fill_manual(values = my_colors) +  
+  
+  # Remove grey background and customize theme
   theme_minimal() +
-  theme(legend.title= element_blank()) +
-  theme(
-    panel.grid.major = element_blank(),  # Remove major grid lines
-    panel.grid.minor = element_blank(),  # Remove minor grid lines
-    axis.line = element_line(color = "black")  # Add axis lines
-  )+
+  theme(legend.title = element_blank(),
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        axis.line = element_line(color = "black")) +  # Add axis lines
+  
   guides(fill = "none")
 
-ggplotly(p5)
-#api_create(p5, filename = "Success rate by Job Title")
+# Convert to plotly and use the custom `text` for the tooltip
+ggplotly(p5, tooltip = "text")
+
+
+#api_create(ggplotly(p5, tooltip = "text"), filename = "Success rate by Job Title")
 
 ```
 
@@ -592,34 +634,51 @@ ggplotly(p5)
 ```{r bubble}
 # Create a vector that maps job titles to self-assessment scores
 self_assessment_values <- c("Data Scientist" = 5, 
-                            "Data Analyst" = 8, 
-                            "Analytics Engineer" = 8, 
+                            "Data Analyst" = 9, 
+                            "Analytics Engineer" = 9, 
                             "Data Engineer" = 6, 
-                            "Business Analyst" = 8)
+                            "Business Analyst" = 9)
 
 # Add self-assessment ratings to the normalized_interview_data dataframe
 normalized_interview_data <- normalized_interview_data %>%
   mutate(self_assessment = self_assessment_values[job_category])
 
 
-# Bubble plot with custom colors and no gray background
-p6 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_rate), y = success_rate, size = self_assessment, color = job_category)) +
-    geom_point(alpha=1) +
-   # scale_size(range = c(5, 18), name="Self-Assessment Rating") + # Show size legend for Self-Assessment
-    scale_color_manual(values = my_colors, guide = "none") + # Apply custom colors but hide the color legend
-    scale_y_continuous(labels = scales::percent_format(scale = 100), limits = c(0, .10)) + # Set y-axis to percent with limits from 0 to 10%
-    theme_minimal() + # Change background to minimal (white)
-    labs(title = "Success Rate of Applications by Job Category and Self Assessment",
-         x = "Job Category",
-         y = "Success Rate (Interviews / Applications)",
-         caption = "*Bubble size corresponds to self-assessment of skills.")  +
-    theme(legend.position = "none",
-          plot.caption = element_text(hjust = 0.1), # Center the caption
-          plot.caption.position = "plot") +  # Remove legend 
-    scale_size_continuous(range=c(5,15))
+# Customize the tooltip using `aes(text)` in the plot
+p6 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_rate), 
+                                            y = success_rate, 
+                                            size = self_assessment, 
+                                            color = job_category, 
+                                            text = paste("Job Category: ", job_category,
+                                                         "<br>Success Rate: ", round(success_rate * 100, 1), "%",
+                                                         "<br>Self-Assessment (1-10): ", self_assessment))) +
+  
+  # Create the bubble plot
+  geom_point(alpha = 1) +
+  
+  # Customize the size and color
+  scale_color_manual(values = my_colors, guide = "none") +  # Apply custom colors but hide the color legend
+  scale_size_continuous(range = c(5, 15)) +  # Set bubble sizes
+  
+  # Set y-axis to percent with limits from 0 to 10%
+  scale_y_continuous(labels = scales::percent_format(scale = 100), limits = c(0, .10)) +  
+  
+  # Use a minimal theme and adjust labels
+  theme_minimal() +  
+  labs(title = "Success Rate of Applications by Job Category and Self-Assessment",
+       x = "Job Category",
+       y = "Success Rate (Interviews / Applications)",
+       caption = "*Bubble size corresponds to self-assessment of skills.") +
+  
+  # Customize the caption and remove the legend
+  theme(legend.position = "none",
+        plot.caption = element_text(hjust = 0.1),  # Align caption
+        plot.caption.position = "plot") 
 
-ggplotly(p6)
-#api_create(p6, filename = "Success rate by Job Title and Self Assessment")
+# Convert to plotly and use the custom `text` for the tooltip
+ggplotly(p6, tooltip = "text")
+
+#api_create(ggplotly(p6, tooltip = "text"), filename = "Success rate by Job Title and Self Assessment")
 ```
 
 ## 7. Job Post Age
@@ -646,7 +705,7 @@ remove_outliers <- function(x) {
 }
 
 # Apply the function to remove outliers and calculate the mean
-cleaned_data <- remove_outliers(data2$job.post.age)
+cleaned_data <- remove_outliers(data$job.post.age)
 
 # Calculate mean without outliers
 mean_without_outliers <- mean(cleaned_data, na.rm = TRUE)
@@ -656,6 +715,32 @@ mean_without_outliers
 
 ```
 
+
+```{r hist}
+
+# 1. Calculate the percentage of jobs with job.post.age <= 2
+total_jobs <- nrow(data)
+jobs_within_2_days <- sum(cleaned_data <= 2, na.rm = TRUE)
+percentage_within_2_days <- (jobs_within_2_days / total_jobs) * 100
+
+# Print the percentage
+cat("Percentage of jobs applied to within 2 days of posting:", round(percentage_within_2_days, 2), "%\n")
+
+# 2. Calculate the standard deviation of 'job.post.age'
+mean_days <- mean(cleaned_data, na.rm = TRUE)  # Calculate the mean
+sd_days <- sd(cleaned_data, na.rm = TRUE)  # Calculate the standard deviation
+
+# Print the mean and standard deviation
+cat("Mean days since job posted:", round(mean_days, 2), "\n")
+cat("Standard deviation:", round(sd_days, 2), "\n")
+
+# 3. One standard deviation from the mean
+lower_bound <- mean_days - sd_days
+upper_bound <- mean_days + sd_days
+
+cat("One standard deviation from the mean is between", round(lower_bound, 2), "and", round(upper_bound, 2), "days.\n")
+
+```
 
 Job post age and interview success
 ```{r}
