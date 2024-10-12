@@ -8,7 +8,7 @@ This project is an analysis of job search data I collected between June and Sept
 
 * Project Link: [https://github.com/jsmith0434/JobSearchAnalysis](https://github.com/jsmith0434/JobSearchAnalysis)
 
-* _For more info, please refer to the [Medium Article](https://medium.com/@jsmith0434/cruel-summer-lessons-learned-from-the-worst-tech-job-market-in-20-years-75f8abd5f6ae)_
+* Project Write-up: [Medium Article](https://medium.com/@jsmith0434/cruel-summer-lessons-learned-from-the-worst-tech-job-market-in-20-years-75f8abd5f6ae)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
