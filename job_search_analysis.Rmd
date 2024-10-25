@@ -91,6 +91,12 @@ p1 <- ggplot(weekly_summary, aes(x = relative.week.number)) +
   ) +
   scale_color_manual(values = c("Total Applications" = my_colors[1], "Customized Resumes" = my_colors[2])) 
 
+
+ggsave(p1, 
+       filename = "weekly_applications.png",
+       device = "png",
+       height = 4, width = 6, units = "in")
+
 ggplotly(p1, tooltip = "text")
 
 #api_create(ggplotly(p1, tooltip = "text"), filename = "Weekly Applications")
@@ -145,6 +151,12 @@ p2 <- ggplot(weekly_applications, aes(x = relative.week.number)) +
   )
 
 p2
+
+ggsave(p2, 
+       filename = "weekly_cumulative_applications.png",
+       device = "png",
+       height = 4, width = 6, units = "in")
+
 ```
 
 ```{r summary}
@@ -359,6 +371,11 @@ p3 <- ggplot(response_data, aes(x = "", y = count, fill = response_status)) +
 
 p3
 
+ggsave(p3, 
+       filename = "response_pie.png",
+       device = "png",
+       height = 4, width = 4, units = "in")
+
 ```
 
 ## 5. Average Time to Interview Request
@@ -511,6 +528,11 @@ p4 <- ggplot(job_distribution, aes(x = reorder(job_category, -count),
   ) +
   guides(fill = "none")
 
+ggsave(p4, 
+       filename = "applications_by_title.png",
+       device = "png",
+       height = 4, width = 6, units = "in")
+
 # Convert to plotly and use the custom `text` for the tooltip
 ggplotly(p4, tooltip = "text")
 
@@ -622,6 +644,11 @@ p5 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_ra
   
   guides(fill = "none")
 
+ggsave(p5, 
+       filename = "success_rate_by_job_title.png",
+       device = "png",
+       height = 4, width = 6, units = "in")
+
 # Convert to plotly and use the custom `text` for the tooltip
 ggplotly(p5, tooltip = "text")
 
@@ -677,6 +704,11 @@ p6 <- ggplot(normalized_interview_data, aes(x = reorder(job_category, success_ra
 
 # Convert to plotly and use the custom `text` for the tooltip
 ggplotly(p6, tooltip = "text")
+
+ggsave(p6, 
+       filename = "self_assessment.png",
+       device = "png",
+       height = 4, width = 6, units = "in")
 
 #api_create(ggplotly(p6, tooltip = "text"), filename = "Success rate by Job Title and Self Assessment")
 ```
@@ -809,6 +841,11 @@ p7 <- ggplot(source_data, aes(x = reorder(Job.Source, -total_applications),
   scale_fill_manual(values = my_colors) +
   guides(fill = "none")
 
+ggsave(p7, 
+       filename = "job_boards.png",
+       device = "png",
+       height = 4, width = 6, units = "in")
+
 # Convert to plotly and customize the tooltip display to use `text`
 ggplotly(p7, tooltip = "text")
 
@@ -842,6 +879,11 @@ p8 <- ggplot(source_data, aes(x = reorder(Job.Source, -success_rate),
   theme(legend.title= element_blank()) +
   scale_fill_manual(values = my_colors) +
   guides(fill = "none")
+
+ggsave(p8, 
+       filename = "success_by_job_board.png",
+       device = "png",
+       height = 4, width = 6, units = "in")
 
 # Convert to plotly and customize the tooltip display to use `text`
 ggplotly(p8, tooltip = "text")
